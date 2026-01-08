@@ -1,0 +1,796 @@
+    # def handle_client(self, client_socket, address):
+    #     """Handle individual client connections"""
+    #     try:
+    #         with client_socket:
+    #             while self.socket_running:
+    #                 data = client_socket.recv(self.socket_config['buffer_size'])
+    #                 if not data:
+    #                     break
+                    
+    #                 received_data = data.decode('utf-8')
+    #                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+    #                 # Log received data
+    #                 self.root.after(0, lambda: self.log_socket_message(
+    #                     f"Data received from {address[0]}:{address[1]} ({len(received_data)} bytes)"
+    #                 ))
+                    
+    #                 # Display received data
+    #                 self.root.after(0, lambda data=received_data: self.display_received_data(data))
+                    
+    #                 # Auto-parse if it looks like HL7 data
+    #                 if received_data.strip().startswith('MSH'):
+    #                     self.root.after(0, lambda: self.parse_socket_data())
+                    
+    #                 # Send acknowledgment
+    #                 ack = "ACK: Data received successfully\n"
+    #                 client_socket.send(ack.encode('utf-8'))
+                    
+    #     except Exception as e:
+    #         self.root.after(0, lambda: self.log_socket_message(
+    #             f"Client handling error for {address[0]}:{address[1]} - {str(e)}"
+    #         ))
+    #     finally:
+    #         self.root.after(0, lambda: self.log_socket_message(
+    #             f"Connection closed for {address[0]}:{address[1]}"
+    #         ))
+
+
+    # def save_to_database(self):
+    #     """Save parsed data to database - ASTM ke patient table saja"""
+    #     if not hasattr(self, 'patient') or not hasattr(self, 'results'):
+    #         messagebox.showwarning("Warning", "Please parse data first")
+    #         return
+        
+    #     # ✅ Check data format
+    #     data_format = getattr(self, 'current_data_format', 'HL7')
+            
+    #     def save_data():
+    #         try:
+    #             self.update_config()
+    #             conn = psycopg2.connect(**self.db_config)
+    #             cur = conn.cursor()
+                
+    #             # Convert DOB (jika ada)
+    #             dob = None
+    #             try:
+    #                 if self.patient.get('dob'):
+    #                     dob_str = self.patient.get('dob')
+    #                     dob_str = ''.join(filter(str.isdigit, dob_str))
+    #                     if len(dob_str) >= 8:
+    #                         dob = datetime.strptime(dob_str[:8], "%Y%m%d").date()
+    #             except Exception as e:
+    #                 print("Invalid DOB format:", e)
+                
+    #             # Convert sample time
+    #             sample_time = None
+    #             try:
+    #                 if self.patient.get('sample_time'):
+    #                     sample_time_str = self.patient.get('sample_time')
+    #                     if len(sample_time_str) >= 19:  # YYYY-MM-DD HH:MM:SS
+    #                         sample_time = datetime.strptime(sample_time_str, "%Y-%m-%d %H:%M:%S")
+    #                     elif len(sample_time_str) >= 16:  # YYYY-MM-DD HH:MM
+    #                         sample_time = datetime.strptime(sample_time_str, "%Y-%m-%d %H:%M")
+    #                     elif len(sample_time_str) >= 10:  # YYYY-MM-DD
+    #                         sample_time = datetime.strptime(sample_time_str, "%Y-%m-%d")
+    #             except Exception as e:
+    #                 print("Invalid sample time format:", e)
+                
+    #             # ✅ Insert patient info (ALWAYS)
+    #             cur.execute("""
+    #                 INSERT INTO patients (first_name, last_name, dob, sex)
+    #                 VALUES (%s, %s, %s, %s)
+    #                 RETURNING patients_id
+    #             """, (
+    #                 self.patient.get('patient_id', 'Unknown'),
+    #                 self.patient.get('last_name', 'Patient'),
+    #                 dob,
+    #                 self.patient.get('sex', 'U')
+    #             ))
+                
+    #             patient_id = cur.fetchone()[0]
+                
+    #             # ✅ Insert lab results HANYA untuk HL7
+    #             if data_format == "HL7" and len(self.results) > 0:
+    #                 for r in self.results:
+    #                     cur.execute("""
+    #                         INSERT INTO hematology_results (patient_id, test_name, value, units, reference_range, abnormal_flag)
+    #                         VALUES (%s, %s, %s, %s, %s, %s)
+    #                     """, (
+    #                         patient_id,
+    #                         r['test_name'],
+    #                         r['value'],
+    #                         r['units'],
+    #                         r['reference_range'],
+    #                         r['abnormal_flag'] if r['abnormal_flag'] else None
+    #                     ))
+                
+    #             conn.commit()
+    #             cur.close()
+    #             conn.close()
+                
+    #             # Success message
+    #             if data_format == "ASTM":
+    #                 self.root.after(0, lambda: self.update_status(
+    #                     f"✓ ASTM patient data saved (ID: {self.patient.get('patient_id')})"
+    #                 ))
+    #             else:
+    #                 self.root.after(0, lambda: self.update_status(
+    #                     f"✓ HL7 data saved - {len(self.results)} results"
+    #                 ))
+                
+    #         except Exception as e:
+    #             self.root.after(0, lambda: self.update_status(f"✗ Database save failed: {str(e)}"))
+        
+    #     # Run in thread
+    #     threading.Thread(target=save_data, daemon=True).start()
+        
+    #     status_msg = "Saving ASTM patient data..." if data_format == "ASTM" else "Saving HL7 data..."
+    #     self.update_status(status_msg)
+
+
+# def parse_astm_1394(self, raw_data):
+    #     """Parse ASTM 1394 format data (BC2600 specific)"""
+    #     try:
+    #         # Remove control characters
+    #         if raw_data.startswith("#STXA"):
+    #             raw_data = raw_data[5:]
+    #         elif raw_data.startswith("STXA"):
+    #             raw_data = raw_data[4:]
+                
+    #         if raw_data.endswith("#SUB"):
+    #             raw_data = raw_data[:-4]
+    #         elif raw_data.endswith("SUB"):
+    #             raw_data = raw_data[:-3]
+
+    #         if len(raw_data) < 100:
+    #             raise ValueError("ASTM data too short")
+
+    #         # Extract patient info from ASTM format
+    #         patient = {
+    #             'first_name': 'ASTM',  # ASTM doesn't typically have name
+    #             'last_name': 'Patient',
+    #             'patient_id': raw_data[1:8].lstrip("0"),  # Extract ID
+    #             'dob': '',  # ASTM may not have DOB
+    #             'sex': 'U',  # Unknown
+    #             'test_date': f"{raw_data[13:17]}-{raw_data[9:11]}-{raw_data[11:13]}",  # YYYY-MM-DD
+    #             'test_time': f"{raw_data[17:19]}:{raw_data[19:21]}"
+    #         }
+            
+    #         # Parse histogram/test results from ASTM
+    #         # This is device-specific - adjust based on your device's output
+    #         results = []
+            
+    #         # Example: Extract basic info as a test result
+    #         results.append({
+    #             'test_name': 'Patient ID',
+    #             'value': patient['patient_id'],
+    #             'units': '',
+    #             'reference_range': '',
+    #             'abnormal_flag': ''
+    #         })
+            
+    #         results.append({
+    #             'test_name': 'Test Date',
+    #             'value': patient['test_date'],
+    #             'units': '',
+    #             'reference_range': '',
+    #             'abnormal_flag': ''
+    #         })
+            
+    #         results.append({
+    #             'test_name': 'Test Time',
+    #             'value': patient['test_time'],
+    #             'units': '',
+    #             'reference_range': '',
+    #             'abnormal_flag': ''
+    #         })
+            
+    #         return patient, results
+            
+    #     except Exception as e:
+    #         raise ValueError(f"Error parsing ASTM data: {str(e)}")
+
+
+    # def detect_data_format(self, data):
+    #     """Detect if data is HL7 or ASTM format"""
+    #     data_stripped = data.strip()
+        
+    #     # Check for ASTM format
+    #     if data_stripped.startswith("#STXA") or data_stripped.startswith("#STXA"):
+    #         return "ASTM"
+        
+    #     # Check for HL7 format
+    #     if "MSH" in data_stripped or "PID" in data_stripped or "OBX" in data_stripped:
+    #         return "HL7"
+        
+    #     # Default to HL7 if unclear
+    #     return "HL7"
+
+
+    # def save_to_database(self):
+    #     """Save parsed data to database"""
+    #     if not hasattr(self, 'patient') or not hasattr(self, 'results'):
+    #         messagebox.showwarning("Warning", "Please parse data first")
+    #         return
+
+    #     data_format = getattr(self, 'current_data_format', 'HL7')
+
+    #     def save_data():
+    #         try:
+    #             self.update_config()
+    #             conn = psycopg2.connect(**self.db_config)
+    #             cur = conn.cursor()
+
+    #             # Insert patient info
+    #             cur.execute("""
+    #                 INSERT INTO patients (first_name, last_name, dob, sex)
+    #                 VALUES (%s, %s, %s, %s)
+    #                 RETURNING patients_id
+    #             """, (
+    #                 self.patient.get('patient_id', 'Unknown'),
+    #                 self.patient.get('last_name', 'Patient'),
+    #                 None,
+    #                 'U'
+    #             ))
+    #             patient_id = cur.fetchone()[0]
+
+    #             # ✅ FIX: Hanya HL7 DAN CUSTOM_HL7 yang punya hasil lab
+    #             if data_format in ["HL7", "CUSTOM_HL7"] and len(self.results) > 0:
+    #                 for r in self.results:
+    #                     cur.execute("""
+    #                         INSERT INTO hematology_results
+    #                         (patient_id, test_name, value, units, reference_range, abnormal_flag)
+    #                         VALUES (%s, %s, %s, %s, %s, %s)
+    #                     """, (
+    #                         patient_id,
+    #                         r.get('test_name', ''),
+    #                         r.get('value', ''),
+    #                         r.get('units', ''),
+    #                         r.get('reference_range', ''),
+    #                         r.get('abnormal_flag') if r.get('abnormal_flag') else None
+    #                     ))
+
+    #             conn.commit()
+    #             cur.close()
+    #             conn.close()
+                
+    #             # ✅ Success message yang lebih informatif
+    #             if data_format == "CUSTOM_HL7":
+    #                 success_msg = f"✅ Custom HL7 data saved ({len(self.results)} results)"
+    #             elif data_format == "HL7":
+    #                 success_msg = f"✅ HL7 data saved ({len(self.results)} results)"
+    #             else:
+    #                 success_msg = "✅ Data saved successfully"
+                
+    #             self.root.after(0, lambda msg=success_msg: self.update_status(msg))
+    #             self.root.after(0, lambda msg=success_msg: self.log_socket_message(msg))
+
+    #         except Exception as e:
+    #             import traceback
+    #             traceback_str = traceback.format_exc()
+    #             print(traceback_str)
+                
+    #             error_msg = f"❌ Database save failed: {str(e)}"
+    #             self.root.after(0, lambda msg=error_msg: self.update_status(msg))
+    #             self.root.after(0, lambda msg=error_msg: self.log_socket_message(msg))
+        
+    #     threading.Thread(target=save_data, daemon=True).start()
+
+
+        # def parse_urit_8030(self, raw_data):
+    #     """
+    #     Parse URIT-8030 Custom HL7 format (single line dengan #VTM, #CR, #FS)
+    #     Extract Patient ID dari OBR, Sample Time lengkap dari MSH, dan Results
+    #     """
+    #     try:
+    #         # ✅ STEP 1: Clean markers dan normalize
+    #         clean_data = raw_data
+            
+    #         # Normalize line endings
+    #         clean_data = clean_data.replace('\r\n', '\n')
+    #         clean_data = clean_data.replace('\r', '\n')
+            
+    #         # Remove control markers
+    #         clean_data = clean_data.replace('#VTM', '')
+    #         clean_data = clean_data.replace('#FS', '')
+            
+    #         # Replace #CR with newline untuk memisahkan segmen
+    #         clean_data = clean_data.replace('#CR', '\n')
+            
+    #         # Clean up extra whitespace
+    #         clean_data = '\n'.join([line.strip() for line in clean_data.split('\n') if line.strip()])
+            
+    #         self.log_api_response(f"URIT-8030 cleaned. Original: {len(raw_data)} bytes → Clean: {len(clean_data)} bytes")
+            
+    #         # ✅ STEP 2: Parse segments
+    #         lines = clean_data.strip().split('\n')
+            
+    #         patient = {}
+    #         results = []
+    #         patient_id = None
+    #         sample_time = None
+    #         patient_name = None  # Simpan nama untuk informasi tambahan
+            
+    #         for line in lines:
+    #             line = line.strip()
+    #             if not line:
+    #                 continue
+                
+    #             segments = line.split('|')
+    #             if not segments:
+    #                 continue
+                
+    #             segment_type = segments[0]
+                
+    #             # ===== MSH Segment (Message Header - Sample Time LENGKAP) =====
+    #             if segment_type == 'MSH':
+    #                 try:
+    #                     # Format: MSH|^~\&|urit|8030|||20251022095517||...
+    #                     # Index:  0   1     2    3    4 5 6
+    #                     if len(segments) > 6 and segments[6]:
+    #                         msg_datetime = segments[6].strip()
+    #                         if len(msg_datetime) >= 14:
+    #                             year = msg_datetime[:4]
+    #                             month = msg_datetime[4:6]
+    #                             day = msg_datetime[6:8]
+    #                             hour = msg_datetime[8:10]
+    #                             minute = msg_datetime[10:12]
+    #                             second = msg_datetime[12:14]
+    #                             sample_time = f"{year}-{month}-{day} {hour}:{minute}:{second}"
+    #                             self.log_api_response(f"✅ URIT MSH datetime parsed: {sample_time}")
+    #                         elif len(msg_datetime) >= 8:
+    #                             year = msg_datetime[:4]
+    #                             month = msg_datetime[4:6]
+    #                             day = msg_datetime[6:8]
+    #                             sample_time = f"{year}-{month}-{day}"
+    #                             self.log_api_response(f"✅ URIT MSH date parsed: {sample_time}")
+    #                 except Exception as e:
+    #                     self.log_api_response(f"⚠️ Warning: Error parsing MSH segment: {str(e)}")
+                
+    #             # ===== PID Segment (Patient Name - untuk informasi saja) =====
+    #             elif segment_type == 'PID':
+    #                 try:
+    #                     # Format: PID|1||||RD NUNUNG||0|||||0|||||||||||||||||||
+    #                     # Index:  0   1 2  3 4 5
+                        
+    #                     # Field 5: Patient Name (simpan untuk referensi)
+    #                     if len(segments) > 5 and segments[5] and segments[5].strip():
+    #                         patient_name = segments[5].strip()
+    #                         self.log_api_response(f"ℹ️ URIT Patient Name from PID[5]: {patient_name}")
+                        
+    #                 except Exception as e:
+    #                     self.log_api_response(f"⚠️ Warning: Error parsing PID segment: {str(e)}")
+                
+    #             # ===== OBR Segment (Order Information - PATIENT ID ADA DI SINI) =====
+    #             elif segment_type == 'OBR':
+    #                 try:
+    #                     # Format: OBR|1||202510220005|urit^8030|N||2025-10-22|||...
+    #                     # Index:  0   1  2 3            4          5  6
+                        
+    #                     # ✅ FIX: Field 3 adalah Patient ID / Order Number
+    #                     if len(segments) > 3 and segments[3]:
+    #                         patient_id = segments[3].strip()
+    #                         self.log_api_response(f"✅ URIT Patient ID from OBR[3]: {patient_id}")
+                        
+    #                     # Field 7: Observation Date (untuk fallback jika MSH tidak ada waktu)
+    #                     if len(segments) > 7 and segments[7]:
+    #                         obr_date = segments[7].strip()
+    #                         # Hanya gunakan jika sample_time belum ada atau tidak lengkap
+    #                         if not sample_time or len(sample_time) <= 10:
+    #                             # Cek apakah format lengkap YYYYMMDDHHMMSS
+    #                             if len(obr_date) >= 14:
+    #                                 year = obr_date[:4]
+    #                                 month = obr_date[4:6]
+    #                                 day = obr_date[6:8]
+    #                                 hour = obr_date[8:10]
+    #                                 minute = obr_date[10:12]
+    #                                 second = obr_date[12:14]
+    #                                 sample_time = f"{year}-{month}-{day} {hour}:{minute}:{second}"
+    #                                 self.log_api_response(f"✅ URIT Sample time from OBR[7]: {sample_time}")
+    #                             elif not sample_time:
+    #                                 # Hanya tanggal
+    #                                 sample_time = obr_date
+    #                                 self.log_api_response(f"✅ URIT Sample date from OBR[7]: {sample_time}")
+                        
+    #                 except Exception as e:
+    #                     self.log_api_response(f"⚠️ Warning: Error parsing OBR segment: {str(e)}")
+                
+    #             # ===== OBX Segment (Observation Results) =====
+    #             elif segment_type == 'OBX':
+    #                 try:
+    #                     # Format: OBX|1|NM|1|GLU|242.70|mg/dL|80.00-120.00|N|||F||0.5126|2025-10-22||lab||
+    #                     # Index:  0   1  2  3 4   5      6     7            8 9 10 11 12     13        14 15
+                        
+    #                     if len(segments) > 5:
+    #                         # Field 4: Test Code/Name
+    #                         test_name = segments[4] if len(segments) > 4 else 'Unknown Test'
+                            
+    #                         # Field 5: Result Value
+    #                         value = segments[5] if len(segments) > 5 else ''
+                            
+    #                         # Field 6: Units
+    #                         units = segments[6] if len(segments) > 6 else ''
+                            
+    #                         # Field 7: Reference Range
+    #                         ref_range = segments[7] if len(segments) > 7 else ''
+                            
+    #                         # Field 8: Abnormal Flag
+    #                         abnormal_flag = segments[8] if len(segments) > 8 else ''
+                            
+    #                         # Field 13: Observation Time (jika ada)
+    #                         obs_time = ''
+    #                         if len(segments) > 13 and segments[13]:
+    #                             obs_time_raw = segments[13].strip()
+    #                             # Cek apakah format lengkap atau hanya tanggal
+    #                             if len(obs_time_raw) >= 14:
+    #                                 # Format: YYYYMMDDHHMMSS
+    #                                 year = obs_time_raw[:4]
+    #                                 month = obs_time_raw[4:6]
+    #                                 day = obs_time_raw[6:8]
+    #                                 hour = obs_time_raw[8:10]
+    #                                 minute = obs_time_raw[10:12]
+    #                                 second = obs_time_raw[12:14]
+    #                                 obs_time = f"{year}-{month}-{day} {hour}:{minute}:{second}"
+    #                             else:
+    #                                 # Kemungkinan format YYYY-MM-DD
+    #                                 obs_time = obs_time_raw
+                                
+    #                             self.log_api_response(f"✅ URIT OBX time parsed: {obs_time}")
+                            
+    #                         if test_name and value:
+    #                             results.append({
+    #                                 'test_name': test_name,
+    #                                 'value': value,
+    #                                 'units': units,
+    #                                 'reference_range': ref_range,
+    #                                 'abnormal_flag': abnormal_flag,
+    #                                 'observation_time': obs_time
+    #                             })
+                                
+    #                 except Exception as e:
+    #                     self.log_api_response(f"⚠️ Warning: Error parsing OBX segment: {str(e)}")
+            
+    #         # ✅ STEP 3: Assign patient data
+    #         # Patient ID dari OBR (PENTING!)
+    #         patient['patient_id'] = patient_id if patient_id else 'Unknown'
+            
+    #         # Sample Time dari MSH (lengkap dengan jam:menit:detik)
+    #         patient['sample_time'] = sample_time if sample_time else ''
+            
+    #         # Tambahkan patient name untuk informasi (opsional)
+    #         if patient_name:
+    #             patient['patient_name'] = patient_name
+            
+    #         # ✅ Validation log
+    #         log_msg = f"✅ URIT-8030 parsed: Patient ID={patient['patient_id']}, Sample Time={patient['sample_time']}, Results={len(results)}"
+    #         if patient_name:
+    #             log_msg += f", Patient Name={patient_name}"
+    #         self.log_api_response(log_msg)
+            
+    #         return patient, results
+            
+    #     except Exception as e:
+    #         raise ValueError(f"Error parsing URIT-8030 data: {str(e)}")
+
+    # def parse_bc1800(self, raw_data):
+    #     """
+    #     Parse BC-1800 ASTM format data
+    #     Extract Patient ID dan Sample Time dari posisi fixed
+        
+    #     Format: #STXAAAI10P190000101765590102320250712...
+    #     Breakdown:
+    #     - #STXA: Start marker (5 chars)
+    #     - AAI10P1: Header/device info (7 chars)
+    #     - 9000010176559: Patient ID dengan padding (13 chars)
+    #     - 010232025071200820010000: Date/Time info (24 chars)
+        
+    #     Patient ID: chars 12-24 (13 digits dengan leading zeros)
+    #     Sample Date: chars 25-32 (YYYYMMDD) 
+    #     Sample Time: chars 33-36 (HHMM)
+    #     """
+    #     try:
+    #         # âœ… STEP 1: Find STXA marker
+    #         stxa_pos = raw_data.find("#STXA")
+            
+    #         if stxa_pos == -1:
+    #             # Try without hash
+    #             stxa_pos = raw_data.find("STXA")
+    #             if stxa_pos == -1:
+    #                 raise ValueError("STXA marker not found in BC-1800 data")
+            
+    #         # Extract data starting after #STXA (5 chars) or STXA (4 chars)
+    #         if raw_data[stxa_pos:stxa_pos+5] == "#STXA":
+    #             data_start = stxa_pos + 5
+    #         else:
+    #             data_start = stxa_pos + 4
+            
+    #         clean_data = raw_data[data_start:]
+            
+    #         # âœ… STEP 2: Validate minimum length
+    #         if len(clean_data) < 40:
+    #             raise ValueError(f"BC-1800 data too short (only {len(clean_data)} chars after STXA)")
+            
+    #         self.log_api_response(f"BC-1800 data length: {len(clean_data)} bytes")
+            
+    #         # âœ… STEP 3: Extract Patient ID
+    #         # Position 12-24 (13 characters) after header
+    #         # Format: AAI10P1[9000010176559]010232025071200820010000...
+    #         #         0123456[7890123456789]...
+    #         #                12          24
+            
+    #         try:
+    #             # Skip first 7 chars (AAI10P1 or similar header)
+    #             patient_id_start = 7
+    #             patient_id_end = patient_id_start + 13
+                
+    #             if len(clean_data) >= patient_id_end:
+    #                 patient_id_raw = clean_data[patient_id_start:patient_id_end]
+    #                 # Remove leading zeros but keep at least one digit
+    #                 patient_id = patient_id_raw.lstrip("0") or "0"
+    #                 self.log_api_response(f"âœ… BC-1800 Patient ID extracted: {patient_id} (raw: {patient_id_raw})")
+    #             else:
+    #                 patient_id = "Unknown"
+    #                 self.log_api_response(f"âš ï¸ BC-1800 Patient ID: insufficient data length")
+            
+    #         except Exception as e:
+    #             patient_id = "Unknown"
+    #             self.log_api_response(f"âš ï¸ BC-1800 Patient ID extraction error: {str(e)}")
+            
+    #         # âœ… STEP 4: Extract Sample Time
+    #         # Position 25-36 (YYYYMMDDHHMM format - 12 chars)
+    #         # Format: ...9000010176559[010232025071200]820010000...
+    #         #                      25           36
+    #         # Breakdown: 01023 (?) 2025 0712 00 (?)
+    #         # We need: YYYY=2025, MM=07, DD=12
+            
+    #         try:
+    #             datetime_start = 20  # After patient_id_raw (7 + 13)
+    #             datetime_section = clean_data[datetime_start:datetime_start + 20]
+                
+    #             self.log_api_response(f"BC-1800 datetime section (raw): {datetime_section}")
+                
+    #             # âœ… CRITICAL FIX: Proper position parsing based on your example
+    #             # Format analysis: 010232025071200820010000
+    #             #                  01023 2025 0712 00 820010000
+    #             #                  ?     YYYY MMDD HH ?
+                
+    #             # Extract YYYY (position 5-9)
+    #             year = datetime_section[5:9]
+                
+    #             # Extract MM (position 9-11) 
+    #             month = datetime_section[9:11]
+                
+    #             # Extract DD (position 11-13)
+    #             day = datetime_section[11:13]
+                
+    #             # Extract HH (position 13-15) - ini jam
+    #             hour = datetime_section[13:15]
+                
+    #             # Extract MM (position 15-17) - ini menit (jika ada, default 00)
+    #             if len(datetime_section) > 15:
+    #                 minute = datetime_section[15:17] if datetime_section[15:17].isdigit() else "00"
+    #             else:
+    #                 minute = "00"
+                
+    #             # Validate extracted values
+    #             if not all([year.isdigit(), month.isdigit(), day.isdigit(), hour.isdigit()]):
+    #                 raise ValueError("Invalid date/time components")
+                
+    #             # Build sample_time
+    #             sample_time = f"{year}-{month}-{day} {hour}:{minute}:00"
+                
+    #             self.log_api_response(f"âœ… BC-1800 Sample Time parsed: {sample_time}")
+    #             self.log_api_response(f"   └─ Year: {year}, Month: {month}, Day: {day}, Hour: {hour}, Minute: {minute}")
+            
+    #         except Exception as e:
+    #             # Fallback to current datetime
+    #             sample_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    #             self.log_api_response(f"âš ï¸ BC-1800 Sample Time extraction error: {str(e)}, using current time")
+            
+    #         # âœ… STEP 5: Build patient dict
+    #         patient = {
+    #             'patient_id': patient_id,
+    #             'sample_time': sample_time,
+    #             'first_name': 'BC1800',
+    #             'last_name': 'Patient',
+    #             'dob': '',
+    #             'sex': 'U'
+    #         }
+            
+    #         # âœ… STEP 6: Create minimal results (BC-1800 tidak parse histogram detail)
+    #         results = [
+    #             {
+    #                 'test_name': 'Patient ID',
+    #                 'value': patient_id,
+    #                 'units': '',
+    #                 'reference_range': '',
+    #                 'abnormal_flag': ''
+    #             },
+    #             {
+    #                 'test_name': 'Sample Time',
+    #                 'value': sample_time,
+    #                 'units': '',
+    #                 'reference_range': '',
+    #                 'abnormal_flag': ''
+    #             }
+    #         ]
+            
+    #         # âœ… Success log
+    #         self.log_api_response(f"âœ… BC-1800 parsed: Patient ID={patient_id}, Sample Time={sample_time}")
+            
+    #         return patient, results
+            
+    #     except Exception as e:
+    #         import traceback
+    #         error_detail = traceback.format_exc()
+    #         raise ValueError(f"Error parsing BC-1800 data: {str(e)}\n{error_detail}")
+
+    def adjust_font_sizes(self, event=None):
+        """Adjust font sizes based on window size"""
+        window_width = self.root.winfo_width()
+        
+        # Calculate font size based on window width
+        if window_width < 800:
+            title_size = 12
+            normal_size = 8
+            small_size = 7
+        elif window_width < 1200:
+            title_size = 14
+            normal_size = 9
+            small_size = 8
+        else:
+            title_size = 16
+            normal_size = 10
+            small_size = 9
+
+
+# import streamlit as st
+# from utils.db_connection import run_query
+# import pandas as pd
+# from datetime import datetime, timedelta
+# from streamlit_autorefresh import st_autorefresh
+
+# st.title("Data Pemeriksaan")
+# st.set_page_config(page_title="Pemeriksaan Laboratorium", page_icon="👨‍⚕️")
+                   
+# # Query template dasar (nanti bisa dimasukkan ke query_templates.py)
+# BASE_QUERY = """
+# SELECT
+#     d.device_label AS "Alat",
+#     r.patient_id AS "Patient ID",
+#     r.sample_time AS "Waktu Sampel",
+#     r.received_at AS "Waktu Diterima",
+#     r.total_results AS "Jumlah Hasil"
+# FROM test_records r
+# JOIN lab_devices d ON r.device_id = d.device_id
+# WHERE 1=1
+# {filters}
+# ORDER BY r.received_at DESC;
+# """
+
+# st_autorefresh(interval=30000, limit=None, key="refresh_stats")
+# st.sidebar.info("otomatis memuat ulang setiap 30 detik untuk update data terbaru.")
+
+# try:
+#     # Filter sidebar
+#     st.sidebar.subheader("Filter Pemeriksaan")
+
+#     today = datetime.now().date()
+#     start_date = st.sidebar.date_input("Tanggal awal", today - timedelta(days=7))
+#     end_date = st.sidebar.date_input("Tanggal akhir", today)
+#     alat_filter = st.sidebar.text_input("Nama alat (opsional)")
+#     pasien_filter = st.sidebar.text_input("Patient ID (opsional)")
+
+#     # Bangun query filter dinamis
+#     filters = []
+#     if start_date and end_date:
+#         filters.append(f"AND r.sample_time BETWEEN '{start_date}' AND '{end_date + timedelta(days=1)}'")
+#     if alat_filter:
+#         filters.append(f"AND d.device_label ILIKE '%{alat_filter}%'")
+#     if pasien_filter:
+#         filters.append(f"AND r.patient_id ILIKE '%{pasien_filter}%'")
+
+#     final_query = BASE_QUERY.format(filters="\n".join(filters))
+
+#     # Jalankan query
+#     df = run_query(final_query)
+
+#     if not df.empty:
+#         st.dataframe(df, use_container_width=True)
+#         st.caption(f"Total pemeriksaan ditemukan: {len(df)}")
+#     else:
+#         st.info("Tidak ada data pemeriksaan dengan filter tersebut.")
+
+# except Exception as e:
+#     st.error(f"Gagal memuat data pemeriksaan: {e}")
+
+
+        # --- Tombol ekspor ---
+
+
+# import streamlit as st
+# from utils.db_connection import run_query
+# import plotly.express as px
+# from datetime import datetime, timedelta
+# import pandas as pd
+# from streamlit_autorefresh import st_autorefresh
+
+# st.set_page_config(page_title="Data Alat Laboratorium", page_icon="🧪")
+
+# # Optional: auto-refresh setiap 15 detik
+# st_autorefresh(interval=15000, key="data_alat_refresh")
+
+# st.title("Data Pemeriksaan per Alat")
+
+# # --- 🔍 Sidebar filter ---
+# st.sidebar.header("Filter Data")
+
+# # Ambil daftar alat dari database
+# try:
+#     devices_query = "SELECT device_id, device_label FROM lab_devices ORDER BY device_label;"
+#     devices_df = run_query(devices_query)
+#     device_options = devices_df["device_label"].tolist() if not devices_df.empty else []
+# except Exception as e:
+#     st.sidebar.error(f"Gagal memuat daftar alat: {e}")
+#     device_options = []
+
+# selected_device = st.sidebar.selectbox("Pilih alat laboratorium", device_options)
+
+# today = datetime.now().date()
+# start_date = st.sidebar.date_input("Tanggal awal", today - timedelta(days=14))
+# end_date = st.sidebar.date_input("Tanggal akhir", today)
+
+# # --- Main content area ---
+# if selected_device:
+#     selected_device_id = devices_df.loc[
+#         devices_df["device_label"] == selected_device, "device_id"
+#     ].values[0]
+
+#     query_data = f"""
+#         SELECT
+#             ld.device_label AS alat,
+#             res.test_name AS parameter,
+#             COUNT(res.result_id) AS total_pemeriksaan
+#         FROM
+#             test_results res
+#         JOIN
+#             test_records tr ON res.record_id = tr.record_id
+#         JOIN
+#             lab_devices ld ON tr.device_id = ld.device_id
+#         WHERE
+#             tr.device_id = '{selected_device_id}'
+#             AND tr.received_at BETWEEN '{start_date}' AND '{end_date + timedelta(days=1)}'
+#         GROUP BY
+#             ld.device_label, res.test_name
+#         ORDER BY
+#             total_pemeriksaan DESC;
+#     """
+
+#     try:
+#         df_result = run_query(query_data)
+
+#         if not df_result.empty:
+#             st.subheader(f"Pemeriksaan {selected_device}")
+#             st.caption(f"Periode: {start_date} s.d. {end_date}")
+
+#             # --- Grafik batang ---
+#             fig = px.bar(
+#                 df_result,
+#                 x="parameter",
+#                 y="total_pemeriksaan",
+#                 text_auto=True,
+#                 title=f"Jumlah Pemeriksaan per Parameter ({selected_device})",
+#                 labels={"parameter": "Nama Parameter", "total_pemeriksaan": "Jumlah Pemeriksaan"}
+#             )
+#             fig.update_traces(marker_color="#1f77b4")
+#             st.plotly_chart(fig, use_container_width=True)
+
+#             # --- Tabel data ---
+#             st.dataframe(df_result, use_container_width=True)
+#         else:
+#             st.info("Tidak ada data pemeriksaan untuk rentang waktu ini.")
+#     except Exception as e:
+#         st.error(f"Gagal mengambil data: {e}")
+# else:
+#     st.warning("Pilih alat laboratorium terlebih dahulu dari sidebar.")
